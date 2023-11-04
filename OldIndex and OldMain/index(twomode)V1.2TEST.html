@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset=UTF-8 />
+        <link rel="stylesheet" type="text/css" href="styles.css"/>
+    </head>
+    <body>
+        <script type="importmap">
+            {
+              "imports": {
+                "three": "https://unpkg.com/three/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three/examples/jsm/"
+              }
+            }
+        </script>
+        <script type="module">
+            import * as THREE from 'three';
+            import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+            import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+            import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+            import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+            import { FlyControls } from 'three/addons/controls/FlyControls.js';
+            import { TWEEN } from 'three/addons/libs/tween.module.min.js';
+            
+            
+            let scene, camera, renderer, hlight, car, controls, orbitalControls, pointerLockControls, flyControls, objectCenter;
+            
+            let isAutorotating = true;
+            let rotationSpeed = 0; // Initial rotation speed
+            let rotationDirection = 1; // Initial rotation direction (1 for clockwise, -1 for counterclockwise)
+			
+            let moveForward = false;
+			let moveBackward = false;
+			let moveLeft = false;
+			let moveRight = false;
+            let moveUp = false;
+            let moveDown = false;
+            let sprint = false;
+            let slowwalk = false;
+            
+			let prevTime = performance.now();
+			const velocity = new THREE.Vector3();
+			const direction = new THREE.Vector3();
+            let currentCamDirection = new THREE.Vector3();
+
+            // Define the minimum and maximum Camera Height values in FPS
+            const minCamHeight=0.01; 
+            const maxCamHeight=25;
+
+            // Define the minimum and maximum Camera FOV values
+            const MIN_FOV = 5;
+            const MAX_FOV = 110;
+
+            // Define variable for switching Controls
+            let controlKeyPressed = false;
+
+
+            // Initialize the scene
+            init();
+
+            // Start the animation loop
+            animate();
+
+            function render() {
+
+            renderer.render( scene, camera );
+
+            }
+
+            function init() {
+
+                // Create the scene
+
+                scene = new THREE.Scene();
+                //scene.background = new THREE.Color(0xdddddd);
+                scene.fog = new THREE.FogExp2( 0xcccccc, 0.02 );
+
+                new RGBELoader()
+					.setPath( 'Environment/' )
+					.load( 'kiara_1_dawn_4k.hdr', function ( texture ) {
+
+						texture.mapping = THREE.EquirectangularReflectionMapping;
+
+						scene.background = texture;
+						scene.environment = texture;
+
+						render();
+
+
+                        // Load the GLTF file
+                        let loader = new GLTFLoader().setPath( 'Car/Datsun/' );;
+                        loader.load('scene.gltf',function(gltf){                    
+                            car = gltf.scene.children[0];
+                            car.scale.set(0.002,0.002,0.002);
+                              // Move the object up by 10 units in the y direction
+                            car.position.y += 11.04;
+                            scene.add(gltf.scene);
+                            render();
+                        });
+
+                        // Load the GLTF file
+                        let loader2 = new GLTFLoader().setPath( 'Car/Bidaya/' );;
+                        loader2.load('bidaya_mat.gltf',function(gltf){                    
+                            // car = gltf.scene.children[0];
+                            // car.scale.set(1,1,1);
+                            scene.add(gltf.scene);
+                            let bbox = new THREE.Box3().setFromObject( gltf.scene ); // Gets Bounding Box of GLTF
+                            objectCenter = bbox.getCenter( new THREE.Vector3() ); // Gets center of Bounding Box
+                            console.log('Object Height:',objectCenter.y)
+                            render();
+                        });
+
+                        // Load the GLTF file - Floor
+                        let loaderFloor = new GLTFLoader();
+                        loaderFloor.load('floor.gltf',function(gltf){                    
+                            scene.add(gltf.scene);
+                            render();
+                        });
+
+                        // Load the GLTF file - human
+                        let loaderHuman = new GLTFLoader();
+                        loaderHuman.load('human.gltf',function(gltf){                    
+                            scene.add(gltf.scene);
+                            render();
+                        });
+
+					} );
+
+                // Create the renderer
+                renderer = new THREE.WebGLRenderer({antialias:true});
+                renderer.setPixelRatio( window.devicePixelRatio );
+                renderer.setSize(window.innerWidth,window.innerHeight);
+                renderer.toneMapping = THREE.ACESFilmicToneMapping;// check the diff options
+				renderer.toneMappingExposure = 1;
+				renderer.outputEncoding = THREE.sRGBEncoding;
+                document.body.appendChild(renderer.domElement);                 
+
+                // Create the camera
+                camera = new THREE.PerspectiveCamera(50,window.innerWidth/window.innerHeight,0.01,5000)
+                camera.position.set( 3.5  , 1.7, -2.5);
+                let targetFOV = camera.fov;
+
+                // Create a new <div> element to display the camera height
+                const cameraHeightDiv = document.createElement('div');
+                cameraHeightDiv.id = 'camera-height';
+                cameraHeightDiv.style.position = 'absolute';
+                cameraHeightDiv.style.top = '10px';
+                cameraHeightDiv.style.left = '10px';
+                cameraHeightDiv.style.color = 'white';
+                document.body.appendChild(cameraHeightDiv);
+                
+                // Create a new <div> element to display the camera FOV
+                const cameraFOVDiv = document.createElement('div');
+                cameraFOVDiv.id = 'camera-FOV';
+                cameraFOVDiv.style.position = 'absolute';
+                cameraFOVDiv.style.top = '30px';
+                cameraFOVDiv.style.left = '10px';
+                cameraFOVDiv.style.color = 'white';
+                document.body.appendChild(cameraFOVDiv);
+
+                // Create controls for Fly Controls
+                flyControls = new FlyControls(camera, renderer.domElement);
+				flyControls.movementSpeed = 2;
+				//flyControls.domElement = container;
+				flyControls.rollSpeed = Math.PI / 6;
+				flyControls.autoForward = false;
+				flyControls.dragToLook = false;
+
+                // Create cool triangle pyramids
+                const geometry = new THREE.CylinderGeometry( 0, 10, 30, 4, 1 );
+				const material = new THREE.MeshPhongMaterial( { color: 0xffffff, flatShading: true } );
+
+				for ( let i = 0; i < 500; i ++ ) {
+
+					const mesh = new THREE.Mesh( geometry, material );
+					mesh.position.x = Math.random() * 1600 - 800;
+					mesh.position.y = 0;
+					mesh.position.z = Math.random() * 1600 - 800;
+					mesh.updateMatrix();
+					mesh.matrixAutoUpdate = false;
+					scene.add( mesh );
+
+				}
+
+                // Add the light
+                hlight = new THREE.AmbientLight (0xff1500,100)
+
+				const dirLight1 = new THREE.DirectionalLight( 0xffffff );
+				dirLight1.position.set( 1, 1, 1 );
+				scene.add( dirLight1 );
+
+				const dirLight2 = new THREE.DirectionalLight( 0x002288 );
+				dirLight2.position.set( - 1, - 1, - 1 );
+				scene.add( dirLight2 );
+
+				const ambientLight = new THREE.AmbientLight( 0x222222 );
+				scene.add( ambientLight );
+
+                // Call Window Resize
+                window.addEventListener( 'resize', onWindowResize );
+                
+
+                // Add event listener for Camera FOV
+                document.addEventListener('keydown', function(event) {
+                    switch (event.key) {
+                        case '7':
+                            // Decrease FOV by 5mm
+                            targetFOV = Math.max(camera.fov - 5, MIN_FOV); // Calculate the target FOV value
+                            new TWEEN.Tween(camera).to({ fov: targetFOV }, 150).easing(TWEEN.Easing.Quadratic.Out).start(); // Tween the FOV value over 150ms using a quadratic easing function
+                            break;
+                        case '8':
+                            // Reset FOV to Default
+                            targetFOV = 50; 
+                            new TWEEN.Tween(camera).to({ fov: targetFOV }, 150).easing(TWEEN.Easing.Quadratic.Out).start(); // Tween the FOV value over 150ms using a quadratic easing function
+                            break;
+                        case '9':
+                            // Increase FOV by 5mm
+                            targetFOV = Math.min(camera.fov + 5, MAX_FOV); // Calculate the target FOV value
+                            new TWEEN.Tween(camera).to({ fov: targetFOV }, 150).easing(TWEEN.Easing.Quadratic.Out).start(); // Tween the FOV value over 150ms using a quadratic easing function
+                            break;
+                    }
+                });  
+                                
+                // Add KeyDown event listener for FPS Movement
+				const onKeyDown = function ( event ) {
+
+                    switch ( event.code ) {
+
+                        case 'ArrowUp':
+                        case 'KeyW':
+                            moveForward = true;
+                            break;
+
+                        case 'ArrowLeft':
+                        case 'KeyA':
+                            moveLeft = true;
+                            break;
+
+                        case 'ArrowDown':
+                        case 'KeyS':
+                            moveBackward = true;
+                            break;
+
+                        case 'ArrowRight':
+                        case 'KeyD':
+                            moveRight = true;
+                            break;
+
+                        case 'KeyQ':
+                            moveUp = true;
+                            break;
+
+                        case 'KeyE':
+                            moveDown = true;
+                            break;
+
+                        case 'ShiftLeft':
+                        case 'ShiftRight':
+                            sprint=true;
+                            break;
+
+                        case 'Space':   
+                            slowwalk=true;
+                            break;                            
+
+                    }
+
+                };
+
+                document.addEventListener( 'keydown', onKeyDown );
+
+
+                // Add KeyUp event listener for FPS Movement
+                const onKeyUp = function ( event ) {
+
+                    switch ( event.code ) {
+
+                        case 'ArrowUp':
+                        case 'KeyW':
+                            moveForward = false;
+                            break;
+
+                        case 'ArrowLeft':
+                        case 'KeyA':
+                            moveLeft = false;
+                            break;
+
+                        case 'ArrowDown':
+                        case 'KeyS':
+                            moveBackward = false;
+                            break;
+
+                        case 'ArrowRight':
+                        case 'KeyD':
+                            moveRight = false;
+                            break;
+
+                        case 'KeyQ':
+                            moveUp = false;
+                            break;
+
+                        case 'KeyE':
+                            moveDown = false;
+                            break;
+
+                        case 'ShiftLeft':
+                        case 'ShiftRight':
+                            sprint=false;
+                            break;
+
+                        case 'Space':
+                            slowwalk=false;
+                            break;  
+
+                    }
+
+                };
+
+                document.addEventListener( 'keyup', onKeyUp );
+
+
+            } // closing init() function
+      
+            // Declare animate function
+            function animate() {
+                requestAnimationFrame( animate );
+                          
+                
+                // Update the camera's projection matrix
+                camera.updateProjectionMatrix();
+                // Update the camera height display
+                const cameraHeightDiv = document.getElementById('camera-height');
+                cameraHeightDiv.textContent = `Camera height: ${camera.position.y.toFixed(2)} m`;
+                // Update the camera FOV display
+                const cameraFOVDiv = document.getElementById('camera-FOV');
+                cameraFOVDiv.textContent = `Camera FOV: ${camera.fov.toFixed(2)} \u00B0`;
+
+                // Update Controls
+                // if ( orbitalControls.enabled ) {
+                //     orbitalControls.update();
+                // }
+                // if ( flyControls.enabled ) {
+                    //const delta = clock.getDelta();
+                    flyControls.update(0.005);
+                //}
+                
+                // Update Tween
+                TWEEN.update()
+
+                //Render Scene
+                render();
+            }
+
+            // Function for WindowResize
+            function onWindowResize() {
+
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+
+            renderer.setSize( window.innerWidth, window.innerHeight );
+            render();
+
+            }
+
+        </script>
+        <script>
+            // Additional JavaScript code can be added here
+        </script>
+    </body>
+</html>

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset=UTF-8 />
+        <link rel="stylesheet" type="text/css" href="styles.css"/>
+    </head>
+    <body>
+        <script type="importmap">
+            {
+              "imports": {
+                "three": "https://unpkg.com/three/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three/examples/jsm/"
+              }
+            }
+        </script>
+        <script type="module">
+            import * as THREE from 'three';
+            import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+            import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+            
+            let scene, camera, renderer, hlight, car, controls, objectCenter;
+            let isAutorotating = true;
+            let rotationSpeed = 0; // Initial rotation speed
+            let rotationDirection = 1; // Initial rotation direction (1 for clockwise, -1 for counterclockwise)
+
+            
+            // Initialize the scene
+            init();
+
+            // Start the animation loop
+            animate();
+
+            function init() {
+
+                // Create the scene
+                scene = new THREE.Scene();
+                scene.background = new THREE.Color(0xdddddd);
+                scene.fog = new THREE.FogExp2( 0xcccccc, 0.02 );
+
+                // Create the renderer
+                renderer = new THREE.WebGLRenderer({antialias:true});
+                renderer.setPixelRatio( window.devicePixelRatio );
+                renderer.setSize(window.innerWidth,window.innerHeight);
+                document.body.appendChild(renderer.domElement);                 
+
+                // Create the camera
+                camera = new THREE.PerspectiveCamera(70,window.innerWidth/window.innerHeight,0.01,5000)
+                camera.position.set( 3.5  , 1.7, -2.5);
+                
+                // Create the controls for OrbitalControls.js
+                controls = new OrbitControls( camera, renderer.domElement );
+                controls.autoRotate = true ;
+                controls.enablePan = false ;
+                controls.enableDamping = true; // an animation loop is required when either damping or auto-rotation are enabled
+				controls.dampingFactor = 0.075; // Rotation damping 
+				controls.minDistance = 1; // Zoom-in Limit
+				controls.maxDistance = 10; // Zoom-out Limit
+                controls.maxPolarAngle = Math.PI / 2.01; // limit of looking under the object
+                controls.target.set(0, 0, 0); // sets the coordinates of where to look at
+                
+                // Load the GLTF file
+                let loader = new GLTFLoader();
+                loader.load('bidaya_mat.gltf',function(gltf){                    
+                    car = gltf.scene.children[0];
+                    car.scale.set(1,1,1);
+                    scene.add(gltf.scene);
+                    let bbox = new THREE.Box3().setFromObject( gltf.scene ); // Gets Bounding Box of GLTF
+                    objectCenter = bbox.getCenter( new THREE.Vector3() ); // Gets center of Bounding Box
+                    console.log('Object Height:',objectCenter.y)
+                    renderer.render(scene,camera);
+                });
+
+                // Load the GLTF file - Floor
+                let loaderFloor = new GLTFLoader();
+                loaderFloor.load('floor.gltf',function(gltf){                    
+                    scene.add(gltf.scene);
+                    renderer.render(scene,camera);
+                });
+
+                // Load the GLTF file - human
+                let loaderHuman = new GLTFLoader();
+                loaderHuman.load('human.gltf',function(gltf){                    
+                    scene.add(gltf.scene);
+                    renderer.render(scene,camera);
+                });
+
+
+
+                const geometry = new THREE.CylinderGeometry( 0, 10, 30, 4, 1 );
+				const material = new THREE.MeshPhongMaterial( { color: 0xffffff, flatShading: true } );
+
+				for ( let i = 0; i < 500; i ++ ) {
+
+					const mesh = new THREE.Mesh( geometry, material );
+					mesh.position.x = Math.random() * 1600 - 800;
+					mesh.position.y = 0;
+					mesh.position.z = Math.random() * 1600 - 800;
+					mesh.updateMatrix();
+					mesh.matrixAutoUpdate = false;
+					scene.add( mesh );
+
+				}
+
+                // Add the ambient light
+                hlight = new THREE.AmbientLight (0xff1500,100)
+
+				const dirLight1 = new THREE.DirectionalLight( 0xffffff );
+				dirLight1.position.set( 1, 1, 1 );
+				scene.add( dirLight1 );
+
+				const dirLight2 = new THREE.DirectionalLight( 0x002288 );
+				dirLight2.position.set( - 1, - 1, - 1 );
+				scene.add( dirLight2 );
+
+				const ambientLight = new THREE.AmbientLight( 0x222222 );
+				scene.add( ambientLight );
+
+                // Call Window Resize
+                window.addEventListener( 'resize', onWindowResize );
+            
+                // Add event listener for keydown event
+                document.addEventListener('keydown', function(event) {
+                    switch (event.key) {
+                        case 'r':
+                            // Toggle autorotation
+                            controls.autoRotate = !isAutorotating;
+                            isAutorotating = !isAutorotating;
+                            break;
+                        case 't':
+                            // Increase rotation speed by 1, with a maximum of 20
+                            if (rotationSpeed < 20) {
+                                rotationSpeed += 1;
+                            }
+                            break;
+                        case 'e':
+                            // Decrease rotation speed by 1, with a minimum of 0
+                            if (rotationSpeed > 0) {
+                                rotationSpeed -= 1;
+                            }
+                            break;
+                        case 'R':
+                            // Flip rotation direction
+                            rotationDirection = -rotationDirection;
+                            break;
+                        default:
+                            break;
+                    }
+                });
+            
+            }
+
+            
+            // Declare animate function
+            function animate() {
+                requestAnimationFrame( animate );
+                let cameraPosition = controls.object.position;
+                if(objectCenter) {
+                    let distanceToObject = objectCenter.distanceTo( cameraPosition );
+                }
+                //console.log('Camera Height:',cameraPosition.y)
+                //console.log('Distance:', distanceToObject);
+                // Required if controls.enableDamping or controls.autoRotate are set to true
+                controls.autoRotateSpeed =  rotationSpeed * rotationDirection; // Set the autoRotateSpeed property based on the rotation speed and direction
+                controls.update();
+                renderer.render( scene, camera );
+            }
+
+            // Function for WindowResize
+            function onWindowResize() {
+
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+
+            renderer.setSize( window.innerWidth, window.innerHeight );
+
+            }
+
+        </script>
+        <script>
+            // Additional JavaScript code can be added here
+        </script>
+    </body>
+</html>

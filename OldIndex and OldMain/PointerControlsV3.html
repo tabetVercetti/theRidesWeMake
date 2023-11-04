@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js - pointerlock controls</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<link type="text/css" rel="stylesheet" href="main.css">
+		<style>
+			#blocker {
+				position: absolute;
+				width: 100%;
+				height: 100%;
+				background-color: rgba(0,0,0,0.5);
+                display: block ;
+			}
+
+			#instructions {
+				width: 100%;
+				height: 100%;
+
+				display: flex;
+				flex-direction: column;
+				justify-content: center;
+				align-items: center;
+
+				text-align: center;
+				font-size: 14px;
+				cursor: pointer;
+			}
+
+            #unpause {
+            position: absolute;
+            top: 25%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            cursor: pointer;
+            font-size: 36px;
+            display: block; /* change the display property from none to block */
+            }
+			
+		</style>
+	</head>
+	<body>
+		<div id="blocker">
+			<div id="instructions">
+				<p style="font-size:36px">
+					Instructions:
+				</p>
+				<p>
+					Move: WASD<br/>
+					Look: MOUSE
+				</p>
+			</div>
+            <!-- <div id="unpause" style="display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); cursor:pointer; font-size:36px;">
+                Click to Play
+            </div> -->
+            <div id="unpause">
+				<p style="font-size:36px">
+					Click Here to Play
+				</p>
+            </div>
+		</div>
+		<script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
+
+        <script type="importmap">
+        {
+            "imports": {
+            "three": "https://unpkg.com/three@0.150.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.150.0/examples/jsm/"
+            }
+        }
+        </script>
+
+		<script type="module">
+
+			import * as THREE from 'three';
+
+			import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+            import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+			let camera, scene, renderer, controls, car;
+
+			let moveForward = false;
+			let moveBackward = false;
+			let moveLeft = false;
+			let moveRight = false;
+
+			let prevTime = performance.now();
+			const velocity = new THREE.Vector3();
+			const direction = new THREE.Vector3();
+
+			init();
+			animate();
+
+			function init() {
+
+                // Create the scene
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xffffff );
+				scene.fog = new THREE.Fog( 0xffffff, 0, 750 );
+
+                // Create the renderer
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				document.body.appendChild( renderer.domElement );
+
+                // Create the camera
+				camera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 1, 1000 );
+                camera.position.set( -3.5  , 1.75, 2.5);
+
+                // Create controls for PointerLockControls.js
+				controls = new PointerLockControls( camera, document.body );
+				
+                // // Load the GLTF file
+                // let loader = new GLTFLoader();
+                // loader.load('bidaya_mat.gltf',function(gltf){                    
+                //     car = gltf.scene.children[0];
+                //     car.scale.set(1,1,1);
+                //     scene.add(gltf.scene);
+                //     // let bbox = new THREE.Box3().setFromObject( gltf.scene ); // Gets Bounding Box of GLTF
+                //     // objectCenter = bbox.getCenter( new THREE.Vector3() ); // Gets center of Bounding Box
+                //     // console.log('Object Height:',objectCenter.y)
+                //     renderer.render(scene,camera);
+                // });
+
+                // Load the GLTF file - Floor
+                let loaderFloor = new GLTFLoader();
+                loaderFloor.load('floor.gltf',function(gltf){                    
+                    scene.add(gltf.scene);
+                    renderer.render(scene,camera);
+                });
+
+                // Create pause menu
+				const blocker = document.getElementById( 'blocker' );
+				const instructions = document.getElementById( 'instructions' );
+                const unpause = document.getElementById( 'unpause' );
+
+				unpause.addEventListener( 'click', function () {
+
+                    controls.lock();
+                    // unpause.style.display = 'none';
+
+				} );
+
+				controls.addEventListener( 'lock', function () {
+
+					instructions.style.display = 'none';
+					blocker.style.display = 'none';
+                    unpause.style.display = 'none' ;
+
+				} );
+
+				controls.addEventListener( 'unlock', function () {
+
+                    blocker.style.display = 'block';
+                    instructions.style.display = '';
+                    // unpause.style.display = 'block';
+
+                    setTimeout(() => {
+                        unpause.style.display = 'block';
+                    }, 1000)
+
+				} );
+                
+                // Add event listener for keydown event (FPS)
+				const onKeyDown = function ( event ) {
+
+					switch ( event.code ) {
+
+						case 'ArrowUp':
+						case 'KeyW':
+							moveForward = true;
+							break;
+
+						case 'ArrowLeft':
+						case 'KeyA':
+							moveLeft = true;
+							break;
+
+						case 'ArrowDown':
+						case 'KeyS':
+							moveBackward = true;
+							break;
+
+						case 'ArrowRight':
+						case 'KeyD':
+							moveRight = true;
+							break;
+
+					}
+
+				};
+
+                document.addEventListener( 'keydown', onKeyDown );
+
+
+                // Add event listener for keyup event (FPS)
+				const onKeyUp = function ( event ) {
+
+					switch ( event.code ) {
+
+						case 'ArrowUp':
+						case 'KeyW':
+							moveForward = false;
+							break;
+
+						case 'ArrowLeft':
+						case 'KeyA':
+							moveLeft = false;
+							break;
+
+						case 'ArrowDown':
+						case 'KeyS':
+							moveBackward = false;
+							break;
+
+						case 'ArrowRight':
+						case 'KeyD':
+							moveRight = false;
+							break;
+
+					}
+
+				};
+
+                document.addEventListener( 'keyup', onKeyUp );
+
+                // Create Light
+                const light = new THREE.HemisphereLight( 0xeeeeff, 0x777788, 0.75 );
+				light.position.set( 0.5, 1, 0.75 );
+				scene.add( light );
+
+                const dirLight1 = new THREE.DirectionalLight( 0xffffff );
+				dirLight1.position.set( 1, 1, 1 );
+				scene.add( dirLight1 );
+
+				const dirLight2 = new THREE.DirectionalLight( 0x002288 );
+				dirLight2.position.set( - 1, - 1, - 1 );
+				scene.add( dirLight2 );
+
+				const ambientLight = new THREE.AmbientLight( 0x222222 );
+				scene.add( ambientLight );
+
+                // Call Window Resize
+				window.addEventListener( 'resize', onWindowResize );
+
+			}
+
+			function animate() {
+
+				requestAnimationFrame( animate );
+
+				const time = performance.now();
+
+				if ( controls.isLocked === true ) {
+
+
+					const delta = ( time - prevTime ) / 2500;
+
+					velocity.x -= velocity.x * 10.0 * delta; // increasing more than 10 slows movement
+					velocity.z -= velocity.z * 10.0 * delta;
+					velocity.y -= 9.8 * 100.0 * delta; // 100.0 = mass
+
+					direction.z = Number( moveForward ) - Number( moveBackward );
+					direction.x = Number( moveRight ) - Number( moveLeft );
+					direction.normalize(); // this ensures consistent movements in all directions
+
+					if ( moveForward || moveBackward ) velocity.z -= direction.z * 400.0 * delta;
+					if ( moveLeft || moveRight ) velocity.x -= direction.x * 400.0 * delta;
+
+					controls.moveRight( - velocity.x * delta );
+					controls.moveForward( - velocity.z * delta );
+
+					controls.getObject().position.y += ( velocity.y * delta ); // This line updates the vertical position of the camera object based on its current velocity and the time elapsed since the last frame (the delta value).
+
+					if ( controls.getObject().position.y < 1.75 ) {
+
+						velocity.y = 0;
+						controls.getObject().position.y = 1.75;
+
+					} // this prevents the player from falling through the floor
+
+				}
+
+				prevTime = time;
+				renderer.render( scene, camera );
+
+			}
+
+            // Function for WindowResize
+			function onWindowResize() {
+
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+
+            renderer.setSize( window.innerWidth, window.innerHeight );
+
+            }                       
+
+		</script>
+	</body>
+</html>

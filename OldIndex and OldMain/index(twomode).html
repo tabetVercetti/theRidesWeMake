@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset=UTF-8 />
+        <link rel="stylesheet" type="text/css" href="styles.css"/>
+    </head>
+    <body>
+        <script type="importmap">
+            {
+              "imports": {
+                "three": "https://unpkg.com/three/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three/examples/jsm/"
+              }
+            }
+        </script>
+        <script type="module">
+            import * as THREE from 'three';
+            import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+            import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+            import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+            import { TWEEN } from 'three/addons/libs/tween.module.min.js'
+            
+            
+            let scene, camera, renderer, hlight, car, controls, orbitalControls , pointerLockControls , objectCenter;
+            
+            let isAutorotating = true;
+            let rotationSpeed = 0; // Initial rotation speed
+            let rotationDirection = 1; // Initial rotation direction (1 for clockwise, -1 for counterclockwise)
+			
+            let moveForward = false;
+			let moveBackward = false;
+			let moveLeft = false;
+			let moveRight = false;
+
+			let prevTime = performance.now();
+			const velocity = new THREE.Vector3();
+			const direction = new THREE.Vector3();
+            let currentCamDirection = new THREE.Vector3();
+
+            let currentCamHeight;
+            const minCamHeight=0.01; 
+            const maxCamHeight=25;
+
+            // Initialize the scene
+            init();
+
+            // Start the animation loop
+            animate();
+
+            function init() {
+
+
+                // Create the scene
+                scene = new THREE.Scene();
+                scene.background = new THREE.Color(0xdddddd);
+                scene.fog = new THREE.FogExp2( 0xcccccc, 0.02 );
+
+                // Create the renderer
+                renderer = new THREE.WebGLRenderer({antialias:true});
+                renderer.setPixelRatio( window.devicePixelRatio );
+                renderer.setSize(window.innerWidth,window.innerHeight);
+                document.body.appendChild(renderer.domElement);                 
+
+                // Create the camera
+                camera = new THREE.PerspectiveCamera(50,window.innerWidth/window.innerHeight,0.01,5000)
+                camera.position.set( 3.5  , 1.7, -2.5);
+
+                // Create a new <div> element to display the camera height
+                const cameraHeightDiv = document.createElement('div');
+                cameraHeightDiv.id = 'camera-height';
+                cameraHeightDiv.style.position = 'absolute';
+                cameraHeightDiv.style.top = '10px';
+                cameraHeightDiv.style.left = '10px';
+                cameraHeightDiv.style.color = 'white';
+                document.body.appendChild(cameraHeightDiv);
+                
+                // Create the controls for OrbitalControls.js
+                orbitalControls = new OrbitControls( camera, renderer.domElement );
+                orbitalControls.autoRotate = true ;
+                orbitalControls.enablePan = true ;
+                orbitalControls.enableDamping = true; // an animation loop is required when either damping or auto-rotation are enabled
+				orbitalControls.dampingFactor = 0.25; // Rotation damping, smaller is lower damping
+				orbitalControls.minDistance = 1; // Zoom-in Limit
+				orbitalControls.maxDistance = 15; // Zoom-out Limit
+                orbitalControls.maxPolarAngle = Math.PI / 2.01; // limit of looking under the object
+                orbitalControls.target.set(0, 0, 0); // sets the coordinates of where to look at
+                
+                // prevent panning below ground plane
+                orbitalControls.addEventListener('change', () => {
+                if (camera.position.y < 0.01) {
+                    camera.position.setY(0.01);
+                    orbitalControls.target.setY(0);
+                }
+                });
+
+                // Create controls for PointerLockControls.js
+                pointerLockControls = new PointerLockControls( camera, document.body );
+
+                // Set initial controls
+                let controls = orbitalControls;
+                pointerLockControls.enabled = false;
+                orbitalControls.enabled = true;
+
+                // Load the GLTF file
+                let loader = new GLTFLoader();
+                loader.load('bidaya_mat.gltf',function(gltf){                    
+                    car = gltf.scene.children[0];
+                    car.scale.set(1,1,1);
+                    scene.add(gltf.scene);
+                    let bbox = new THREE.Box3().setFromObject( gltf.scene ); // Gets Bounding Box of GLTF
+                    objectCenter = bbox.getCenter( new THREE.Vector3() ); // Gets center of Bounding Box
+                    console.log('Object Height:',objectCenter.y)
+                    renderer.render(scene,camera);
+                });
+
+                // Load the GLTF file - Floor
+                let loaderFloor = new GLTFLoader();
+                loaderFloor.load('floor.gltf',function(gltf){                    
+                    scene.add(gltf.scene);
+                    renderer.render(scene,camera);
+                });
+
+                // Load the GLTF file - human
+                let loaderHuman = new GLTFLoader();
+                loaderHuman.load('human.gltf',function(gltf){                    
+                    scene.add(gltf.scene);
+                    renderer.render(scene,camera);
+                });
+
+
+                // Create cool triangle pyramids
+                const geometry = new THREE.CylinderGeometry( 0, 10, 30, 4, 1 );
+				const material = new THREE.MeshPhongMaterial( { color: 0xffffff, flatShading: true } );
+
+				for ( let i = 0; i < 500; i ++ ) {
+
+					const mesh = new THREE.Mesh( geometry, material );
+					mesh.position.x = Math.random() * 1600 - 800;
+					mesh.position.y = 0;
+					mesh.position.z = Math.random() * 1600 - 800;
+					mesh.updateMatrix();
+					mesh.matrixAutoUpdate = false;
+					scene.add( mesh );
+
+				}
+
+                // Add the ambient light
+                hlight = new THREE.AmbientLight (0xff1500,100)
+
+				const dirLight1 = new THREE.DirectionalLight( 0xffffff );
+				dirLight1.position.set( 1, 1, 1 );
+				scene.add( dirLight1 );
+
+				const dirLight2 = new THREE.DirectionalLight( 0x002288 );
+				dirLight2.position.set( - 1, - 1, - 1 );
+				scene.add( dirLight2 );
+
+				const ambientLight = new THREE.AmbientLight( 0x222222 );
+				scene.add( ambientLight );
+
+                // Call Window Resize
+                window.addEventListener( 'resize', onWindowResize );
+            
+                // Add event listener for keydown event (Orbital Camera Rotation)
+                document.addEventListener('keydown', function(event) {
+                    switch (event.key) {
+                        case 'r':
+                            // Toggle autorotation
+                            orbitalControls.autoRotate = !isAutorotating;
+                            isAutorotating = !isAutorotating;
+                            break;
+                        case 't':
+                            // Increase rotation speed by 1, with a maximum of 20
+                            if (rotationSpeed < 20) {
+                                rotationSpeed += 1;
+                            }
+                            break;
+                        case 'e':
+                            // Decrease rotation speed by 1, with a minimum of 0
+                            if (rotationSpeed > 0) {
+                                rotationSpeed -= 1;
+                            }
+                            break;
+                        case 'R':
+                            // Flip rotation direction
+                            rotationDirection = -rotationDirection;
+                            break;
+                        default:
+                            break;
+                    }
+                });            
+                
+                // Add KeyDown event listener for FPS Movement
+				const onKeyDown = function ( event ) {
+
+                    switch ( event.code ) {
+
+                        case 'ArrowUp':
+                        case 'KeyW':
+                            moveForward = true;
+                            break;
+
+                        case 'ArrowLeft':
+                        case 'KeyA':
+                            moveLeft = true;
+                            break;
+
+                        case 'ArrowDown':
+                        case 'KeyS':
+                            moveBackward = true;
+                            break;
+
+                        case 'ArrowRight':
+                        case 'KeyD':
+                            moveRight = true;
+                            break;
+                        case 'KeyQ':
+                            currentCamHeight = Math.min(currentCamHeight + 0.1, maxCamHeight);
+                            controls.getObject().position.y = currentCamHeight;
+                            break;
+                        case 'KeyE':
+                            currentCamHeight = Math.max(currentCamHeight - 0.1, minCamHeight);
+                            controls.getObject().position.y = currentCamHeight;
+                            break;
+
+                    }
+
+                };
+
+                document.addEventListener( 'keydown', onKeyDown );
+
+
+                // Add KeyUp event listener for FPS Movement
+                const onKeyUp = function ( event ) {
+
+                    switch ( event.code ) {
+
+                        case 'ArrowUp':
+                        case 'KeyW':
+                            moveForward = false;
+                            break;
+
+                        case 'ArrowLeft':
+                        case 'KeyA':
+                            moveLeft = false;
+                            break;
+
+                        case 'ArrowDown':
+                        case 'KeyS':
+                            moveBackward = false;
+                            break;
+
+                        case 'ArrowRight':
+                        case 'KeyD':
+                            moveRight = false;
+                            break;
+                    }
+
+                };
+
+                document.addEventListener( 'keyup', onKeyUp );
+
+                // Set up button to toggle between controls
+                document.addEventListener('keydown', event => {
+                    if (event.key === 'c') {
+                        if (controls === orbitalControls) {
+                        // Switch to Pointer Lock Controls
+                        controls = pointerLockControls;
+
+                        // Store the current camera height
+                        currentCamHeight = controls.getObject().position.y;
+
+                        // Disable Orbital Controls
+                        orbitalControls.enabled = false;
+
+                        // Enable Pointer Lock Controls
+                        pointerLockControls.enabled = true;
+                        pointerLockControls.lock();
+                        } else {
+                        // Switch to Orbital Controls
+                        controls = orbitalControls;
+
+                        // Disable Pointer Lock Controls
+                        pointerLockControls.enabled = false;
+                        pointerLockControls.unlock();
+
+                        // Enable Orbital Controls
+                        orbitalControls.enabled = true;
+                        
+                        // Use Tween to smoothly transition the control's target
+                        new TWEEN.Tween(orbitalControls.target).to(new THREE.Vector3(0, 0, 0), 350).start();
+
+                        // Define the camera's current direction vector and target direction vector
+                        
+                        camera.getWorldDirection(currentCamDirection);
+                        const targetDirection = new THREE.Vector3(0, 0, 0).sub(camera.position).normalize();
+
+                        // Use Tween to smoothly transition the camera's direction
+                        new TWEEN.Tween(currentCamDirection).to(targetDirection, 350).onUpdate(() => {
+                        camera.lookAt(currentCamDirection);
+                        }).start();
+
+                        }
+
+                    }
+                });
+
+                // Set up button to reset orbital target to (0,0,0)
+                document.addEventListener('keydown', function(event) {
+                    if (event.key === 'o' && controls === orbitalControls) {
+                        new TWEEN.Tween(orbitalControls.target).to(new THREE.Vector3(0, 0, 0), 350).start();
+                    }
+                });
+
+                // Set up button to reset pointerlock target to (0,0,0)
+                document.addEventListener('keydown', function(event) {
+                    if (event.key === 'o' && controls === pointerLockControls) {
+                        // Define the camera's current direction vector and target direction vector
+
+                        camera.getWorldDirection(currentCamDirection);
+                        const targetDirection = new THREE.Vector3(0, 0, 0).sub(camera.position).normalize();
+
+                        // Use Tween to smoothly transition the camera's direction
+                        new TWEEN.Tween(currentCamDirection).to(targetDirection, 350).onUpdate(() => {
+                        camera.lookAt(currentCamDirection);
+                        }).start();
+                    }
+                });
+
+            } // closing init() function
+
+
+            
+            // Declare animate function
+            function animate() {
+                requestAnimationFrame( animate );
+                
+                // Required if controls.enableDamping or controls.autoRotate are set to true
+                orbitalControls.autoRotateSpeed =  rotationSpeed * rotationDirection; // Set the autoRotateSpeed property based on the rotation speed and direction
+                
+
+                // FPS Controls 
+				const time = performance.now();
+
+				if ( pointerLockControls.enabled && pointerLockControls.isLocked === true ) {
+
+                    //console.log('Im in FPS');
+					const delta = ( time - prevTime ) / 2500;
+
+					velocity.x -= velocity.x * 20.0 * delta; // increasing more than 10 slows movement
+					velocity.z -= velocity.z * 20.0 * delta;
+					velocity.y = 0;
+                    //velocity.y -= 9.8 * 100.0 * delta; // 100.0 = mass
+
+					direction.z = Number( moveForward ) - Number( moveBackward );
+					direction.x = Number( moveRight ) - Number( moveLeft );
+                    //direction.y = Number( moveUp ) - Number( moveDown );
+					direction.normalize(); // this ensures consistent movements in all directions
+
+					if ( moveForward || moveBackward ) velocity.z -= direction.z * 400.0 * delta;
+					if ( moveLeft || moveRight ) velocity.x -= direction.x * 400.0 * delta;
+                    //if ( moveUp || moveDown ) velocity.x -= direction.x * 400.0 * delta;
+
+					pointerLockControls.moveRight( - velocity.x * delta );
+					pointerLockControls.moveForward( - velocity.z * delta );
+                    //pointerLockControls.moveUp( - velocity.y * delta );
+					pointerLockControls.getObject().position.y += ( velocity.y * delta ); // This line updates the vertical position of the camera object based on its current velocity and the time elapsed since the last frame (the delta value).
+                    
+
+				}
+
+				prevTime = time;
+
+                // Update the camera height display
+                const cameraHeightDiv = document.getElementById('camera-height');
+                cameraHeightDiv.textContent = `Camera height: ${camera.position.y.toFixed(2)} m`;
+
+                // Update Controls
+
+                if ( orbitalControls.enabled ) {
+
+                    orbitalControls.update();
+
+                }
+                
+                // Update Tween
+                TWEEN.update()
+
+                //Render Scene
+                renderer.render( scene, camera );
+            }
+
+            // Function for WindowResize
+            function onWindowResize() {
+
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+
+            renderer.setSize( window.innerWidth, window.innerHeight );
+
+            }
+
+        </script>
+        <script>
+            // Additional JavaScript code can be added here
+        </script>
+    </body>
+</html>
